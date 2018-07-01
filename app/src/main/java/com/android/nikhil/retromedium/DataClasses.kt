@@ -16,4 +16,14 @@ data class Data(
         val imageUrl: String
 )
 
+data class UserPublication(
+        val id: String,
+        val name: String,
+        val description: String,
+        val url: String,
+        val imageUrl: String
+)
+
+data class PublicationWrapper(val data: ArrayList<UserPublication>)
+
 data class DataWrapper(val data: Data)

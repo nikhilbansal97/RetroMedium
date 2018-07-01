@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
+import android.provider.CallLog
+import android.support.v7.widget.LinearLayoutManager
 import android.util.Log
 import android.widget.Toast
 import com.android.nikhil.retromedium.Constants.Companion.CLIENT_ID
@@ -13,6 +15,7 @@ import com.android.nikhil.retromedium.Constants.Companion.REDIRECT_URI
 import com.android.nikhil.retromedium.Constants.Companion.STATE_OK
 import com.android.nikhil.retromedium.networking.RetrofitClient
 import com.android.nikhil.retromedium.networking.RetrofitInterface
+import kotlinx.android.synthetic.main.activity_main.*
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -21,9 +24,12 @@ import retrofit2.Response
 class MainActivity : AppCompatActivity() {
 
     private val LOG_TAG = MainActivity::class.java.simpleName
+    private var publicationsAdapter: PublicationRecyclerAdapter? = null
+
     companion object {
         private var retrofitInterface: RetrofitInterface? = null
     }
+
     private lateinit var sharedPrefHelper: SharedPreferenceHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,7 +52,7 @@ class MainActivity : AppCompatActivity() {
                 val builder = StringBuilder().apply {
                     append("https://medium.com/m/oauth/authorize?")
                     append("client_id=$CLIENT_ID&")
-                    append("scope=basicProfile,publishPost&")
+                    append("scope=basicProfile,publishPost,listPublications&")
                     append("state=$STATE_OK&")
                     append("response_type=code&")
                     append("redirect_uri=$REDIRECT_URI")
@@ -55,10 +61,10 @@ class MainActivity : AppCompatActivity() {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(builder.toString()))
                 startActivity(intent)
             } else {
-                Toast.makeText(applicationContext, "User already logged in", Toast.LENGTH_SHORT).show()
+                // User is logged in.
+
             }
         }
-
     }
 
     private fun handleOAuth(uri: Uri) {
@@ -87,6 +93,7 @@ class MainActivity : AppCompatActivity() {
                         getUserInfo()
                     }
                 }
+
                 override fun onFailure(call: Call<LongAccessToken>?, t: Throwable?) {
                     Log.d("MainActivity", t.toString())
                 }
@@ -97,20 +104,47 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getUserInfo() {
-        val accessToken = sharedPrefHelper.getSharedPreferenceValue("ACCESS_TOKEN", "None")
-        val callMe = retrofitInterface?.getUserInfo("Bearer $accessToken")
+        val accessToken = sharedPrefHelper.getSharedPreferenceValue("ACCESS_TOKEN", "None").toString()
+        Log.d(LOG_TAG, "getUserInfo method called")
+        val callMe = retrofitInterface?.getUserInfo("Bearer $accessToken",
+                "api.medium.com",
+                "application/json",
+                "application/json",
+                "utf-8")
+
         callMe?.enqueue(object : Callback<DataWrapper> {
             override fun onResponse(call: Call<DataWrapper>?, response: Response<DataWrapper>?) {
                 val body = response?.body()
                 if (body != null) {
                     val data = body.data
+                    sharedPrefHelper.saveSharedPreferenceValue("USER_ID", data.id)
+                    Log.d(LOG_TAG, "User id: ${data.id}")
+                    Log.d(LOG_TAG, "Access token: $accessToken")
                     Toast.makeText(applicationContext, "Welcome ${data.name}!", Toast.LENGTH_LONG).show()
+                    getUserPublications(data.id, accessToken)
                 }
             }
-
             override fun onFailure(call: Call<DataWrapper>?, t: Throwable?) {
                 Log.d("MainActivity", t.toString())
             }
+        })
+    }
+
+    private fun getUserPublications(userId: String, accessToken: String) {
+        val publicationCall = retrofitInterface?.getUserPublications("Bearer $accessToken", userId)
+        publicationCall?.enqueue(object : Callback<PublicationWrapper> {
+            override fun onResponse(call: Call<PublicationWrapper>?, response: Response<PublicationWrapper>?) {
+                val body = response?.body()
+                if (body != null) {
+                    publicationsAdapter = PublicationRecyclerAdapter(applicationContext,  body.data)
+                    articlesRecyclerView.adapter = publicationsAdapter
+                    articlesRecyclerView.layoutManager = LinearLayoutManager(applicationContext)
+                }
+            }
+            override fun onFailure(call: Call<PublicationWrapper>?, t: Throwable?) {
+                Log.d(LOG_TAG, t.toString())
+            }
+
         })
     }
 }
